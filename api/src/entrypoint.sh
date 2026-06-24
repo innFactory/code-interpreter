@@ -144,6 +144,15 @@ fi
 # and walking the full package tree at every runner boot can exhaust VMM file
 # descriptors before the sandbox API even starts.
 
+# Cap the inherited RLIMIT_NOFILE soft limit. Container runtimes commonly set it
+# to 1048576+, which can make NsJail slow/unreliable (it operates over the fd
+# space during setup). Lowering the soft limit needs no privilege and applies to
+# the smoke test and the sandbox API exec'd below.
+_cur_nofile=$(ulimit -n 2>/dev/null || echo unlimited)
+if [ "$_cur_nofile" = unlimited ] || { [ "$_cur_nofile" -gt 65536 ] 2>/dev/null; }; then
+    ulimit -n 65536 2>/dev/null || true
+fi
+
 # NsJail smoke test: verify sandbox can start before accepting traffic.
 echo "Running NsJail smoke test..."
 echo "Guest RLIMIT_NOFILE soft limit: $(ulimit -n 2>/dev/null || echo unknown)"
@@ -167,6 +176,7 @@ fi
 	    chmod 777 "$SMOKE_DIR"
 	fi
 SMOKE_LOG=$(mktemp)
+SMOKE_CONSOLE=$(mktemp)
 
 NSJAIL_CGROUP_ARGS=()
 if [ "$SANDBOX_USE_CGROUPV2" = "true" ]; then
@@ -178,17 +188,21 @@ if timeout 10 /usr/sbin/nsjail --config "${NSJAIL_CONFIG:-/sandbox_api/config/sa
     --user "65534:${SMOKE_OUTSIDE_UID}:1" --group "65534:${SMOKE_OUTSIDE_GID}:1" \
     -s /usr/bin:/bin -s /usr/lib:/lib -s /usr/lib64:/lib64 \
     -B "$SMOKE_DIR:/mnt/data" \
-    -- /bin/sh -c 'printf "%s\n" sandbox_ok > /mnt/data/smoke.txt && test "$(cat /mnt/data/smoke.txt)" = sandbox_ok' > /dev/null 2>&1; then
+    -- /bin/sh -c 'printf "%s\n" sandbox_ok > /mnt/data/smoke.txt && test "$(cat /mnt/data/smoke.txt)" = sandbox_ok' > "$SMOKE_CONSOLE" 2>&1; then
     echo "NsJail smoke test passed"
 else
-    echo "FATAL: NsJail smoke test failed — sandbox cannot start"
-    echo "NsJail log output:"
+    SMOKE_RC=$?
+    echo "FATAL: NsJail smoke test failed — sandbox cannot start (nsjail exit=$SMOKE_RC)"
+    if [ "$SMOKE_RC" -eq 124 ]; then echo "(exit 124 = killed by 'timeout 10' — nsjail hung)"; fi
+    echo "--- nsjail console (stdout+stderr) ---"
+    cat "$SMOKE_CONSOLE" 2>/dev/null || true
+    echo "--- nsjail --log ---"
     cat "$SMOKE_LOG" 2>/dev/null || true
-    rm -f "$SMOKE_LOG"
+    rm -f "$SMOKE_LOG" "$SMOKE_CONSOLE"
     rm -rf "$SMOKE_DIR"
     exit 1
 fi
-rm -f "$SMOKE_LOG"
+rm -f "$SMOKE_LOG" "$SMOKE_CONSOLE"
 rm -rf "$SMOKE_DIR"
 
 echo "Starting sandbox API server..."
