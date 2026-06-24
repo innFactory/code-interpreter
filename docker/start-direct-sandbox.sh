@@ -49,6 +49,16 @@ exec unshare --mount bash -c '
     ROOTFS="${SANDBOX_ROOTFS:-/sandbox-rootfs}"
 
     mount -o bind,ro "$ROOTFS/usr/sbin"     /usr/sbin    || { echo "FATAL: cannot bind /usr/sbin"; exit 1; }
+
+    # We just over-mounted /usr/sbin with the sandbox rootfs, which has no mount(8)
+    # binary. On distros with usr-merge (e.g. Fedora, where /usr/sbin -> /usr/bin)
+    # bash may have cached the path /usr/sbin/mount, which no longer exists -> the
+    # next bind fails with "bash: /usr/sbin/mount: No such file or directory" and
+    # "FATAL: cannot bind /usr/lib". Drop the command-path cache so the next mount
+    # re-resolves to /usr/bin/mount, which is still present (/usr/bin is bound last).
+    # NOTE: keep this comment free of single quotes (it lives inside a bash -c block).
+    hash -r
+
     mount -o bind,ro "$ROOTFS/usr/lib"      /usr/lib     || { echo "FATAL: cannot bind /usr/lib"; exit 1; }
 
     if [ -d "$ROOTFS/usr/lib64" ] && ! [ -L "$ROOTFS/usr/lib64" ]; then
