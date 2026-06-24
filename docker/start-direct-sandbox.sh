@@ -48,16 +48,19 @@ export SANDBOX_ROOTFS="$ROOTFS"
 exec unshare --mount bash -c '
     ROOTFS="${SANDBOX_ROOTFS:-/sandbox-rootfs}"
 
-    mount -o bind,ro "$ROOTFS/usr/sbin"     /usr/sbin    || { echo "FATAL: cannot bind /usr/sbin"; exit 1; }
-
-    # We just over-mounted /usr/sbin with the sandbox rootfs, which has no mount(8)
-    # binary. On distros with usr-merge (e.g. Fedora, where /usr/sbin -> /usr/bin)
-    # bash may have cached the path /usr/sbin/mount, which no longer exists -> the
-    # next bind fails with "bash: /usr/sbin/mount: No such file or directory" and
-    # "FATAL: cannot bind /usr/lib". Drop the command-path cache so the next mount
-    # re-resolves to /usr/bin/mount, which is still present (/usr/bin is bound last).
-    # NOTE: keep this comment free of single quotes (it lives inside a bash -c block).
-    hash -r
+    # /usr/bin is bound last so host tools (mount, coreutils) stay available
+    # during the earlier binds. But on unified-/usr distros (e.g. Fedora 43, the
+    # sandbox-runner base) /usr/sbin is a symlink to /usr/bin: bind-mounting over
+    # /usr/sbin follows the symlink and clobbers /usr/bin, removing the host mount
+    # binary mid-sequence -> "mount: command not found" / "FATAL: cannot bind
+    # /usr/lib". Only bind /usr/sbin when it is a real, separate directory;
+    # otherwise /usr/bin (bound last) already covers it. hash -r refreshes the
+    # command-path cache in case mount was resolved via the just-replaced /usr/sbin.
+    # NOTE: keep this block free of single quotes (it lives inside a bash -c block).
+    if [ -d /usr/sbin ] && [ ! -L /usr/sbin ]; then
+        mount -o bind,ro "$ROOTFS/usr/sbin" /usr/sbin || { echo "FATAL: cannot bind /usr/sbin"; exit 1; }
+        hash -r
+    fi
 
     mount -o bind,ro "$ROOTFS/usr/lib"      /usr/lib     || { echo "FATAL: cannot bind /usr/lib"; exit 1; }
 
