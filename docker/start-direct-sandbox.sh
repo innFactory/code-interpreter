@@ -48,37 +48,25 @@ export SANDBOX_ROOTFS="$ROOTFS"
 exec unshare --mount bash -c '
     ROOTFS="${SANDBOX_ROOTFS:-/sandbox-rootfs}"
 
-    # /usr/bin is bound last so host tools (mount, coreutils) stay available
-    # during the earlier binds. But on unified-/usr distros (e.g. Fedora 43, the
-    # sandbox-runner base) /usr/sbin is a symlink to /usr/bin: bind-mounting over
-    # /usr/sbin follows the symlink and clobbers /usr/bin, removing the host mount
-    # binary mid-sequence -> "mount: command not found" / "FATAL: cannot bind
-    # /usr/lib". Only bind /usr/sbin when it is a real, separate directory;
-    # otherwise /usr/bin (bound last) already covers it. hash -r refreshes the
-    # command-path cache in case mount was resolved via the just-replaced /usr/sbin.
+    # Overlay the rootfs complete /usr in a single bind, rather than individual
+    # subdirs. This is correct on unified-/usr hosts (e.g. Fedora 43, the
+    # sandbox-runner base, where /usr/sbin is a symlink to /usr/bin): the rootfs
+    # own /usr layout becomes visible, with SEPARATE /usr/sbin (holding nsjail)
+    # and /usr/bin (holding mount, python, bun), instead of collapsing onto one
+    # directory. Per-subdir binds broke here: binding the rootfs /usr/sbin followed
+    # the host symlink and clobbered /usr/bin (hiding mount); skipping that bind
+    # instead hid /usr/sbin/nsjail. A single /usr bind sidesteps the symlink.
     # NOTE: keep this block free of single quotes (it lives inside a bash -c block).
-    if [ -d /usr/sbin ] && [ ! -L /usr/sbin ]; then
-        mount -o bind,ro "$ROOTFS/usr/sbin" /usr/sbin || { echo "FATAL: cannot bind /usr/sbin"; exit 1; }
-        hash -r
-    fi
+    mount -o bind,ro "$ROOTFS/usr" /usr || { echo "FATAL: cannot bind /usr"; exit 1; }
+    hash -r
 
-    mount -o bind,ro "$ROOTFS/usr/lib"      /usr/lib     || { echo "FATAL: cannot bind /usr/lib"; exit 1; }
-
-    if [ -d "$ROOTFS/usr/lib64" ] && ! [ -L "$ROOTFS/usr/lib64" ]; then
-        mount -o bind,ro "$ROOTFS/usr/lib64" /usr/lib64 2>/dev/null || \
-            echo "[sandbox] WARNING: could not bind /usr/lib64 - sandboxed binaries may fail to exec"
-    fi
-
-    mount -o bind,ro "$ROOTFS/usr/local"    /usr/local   || { echo "FATAL: cannot bind /usr/local"; exit 1; }
-    mount -o bind,ro "$ROOTFS/sandbox_api"  /sandbox_api || { echo "FATAL: cannot bind /sandbox_api"; exit 1; }
-    mount -o bind,ro "$ROOTFS/pkgs"       /pkgs      || { echo "FATAL: cannot bind /pkgs"; exit 1; }
+    mount -o bind,ro "$ROOTFS/sandbox_api" /sandbox_api || { echo "FATAL: cannot bind /sandbox_api"; exit 1; }
+    mount -o bind,ro "$ROOTFS/pkgs"        /pkgs        || { echo "FATAL: cannot bind /pkgs"; exit 1; }
 
     if [ -d /host-packages ]; then
         mount --bind /host-packages /pkgs 2>/dev/null || \
             echo "WARNING: could not bind /host-packages - sandbox will run without packages"
     fi
-
-    mount -o bind,ro "$ROOTFS/usr/bin" /usr/bin || { echo "FATAL: cannot bind /usr/bin"; exit 1; }
 
     multiarch_libdir=$(find /usr/lib -maxdepth 1 -type d -name "*-linux-gnu" -print -quit)
     if [ -n "$multiarch_libdir" ]; then
