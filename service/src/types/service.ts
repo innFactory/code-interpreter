@@ -3,6 +3,7 @@ import type { Request } from 'express';
 import type { ExecutionManifestClaims } from '../execution-manifest';
 import type { ExecutionIdentity } from '../execution-identity';
 import type { CodeApiPrincipal } from '../auth/principal';
+import type { ExecutionProfile } from '../execution-profile';
 import { Jobs } from '@/enum/service';
 
 /**
@@ -128,6 +129,13 @@ export interface RequestBody {
   args?: string[];
   user_id?: string;
   files?: RequestFile[];
+  /**
+   * Optional stable identity hint (e.g. conversation id) for stateful
+   * runtime sessions. Never a security boundary: the server derives the
+   * final runtime session id as hash(tenant, user, hint). Ignored when
+   * CODEAPI_RUNTIME_SESSION_MODE is `stateless`.
+   */
+  runtime_session_hint?: string;
 }
 
 export type CreatePayload = { req: AuthenticatedRequest, session_id: string; isPyPlot?: boolean };
@@ -150,6 +158,17 @@ export interface FileObject {
 }
 
 export type PayloadFile = { name: string; content: string };
+export type PayloadFileRef = {
+  id: string;
+  storage_session_id: string;
+  name: string;
+  /**
+   * Stable opaque identity for runner-local input caching. The worker derives
+   * it from the authorized raw ref before hardened egress replaces the raw
+   * identifiers with per-grant handles.
+   */
+  input_cache_key?: string;
+};
 
 export interface PayloadBody {
   language: string;
@@ -163,7 +182,7 @@ export interface PayloadBody {
    * are sessionKey-derivation inputs at the service entry, never
    * consumed by the sandbox, so they're intentionally not on this
    * shape. */
-  files: Array<PayloadFile | { id: string; storage_session_id: string; name: string }>;
+  files: Array<PayloadFile | PayloadFileRef>;
   /** Top-level execution session id (passed to sandbox to seed Job.uuid). */
   session_id?: string;
   /** Output storage session id/handle used for generated file uploads. */
@@ -216,6 +235,11 @@ export interface LanguageConfig {
   runtime?: string;
 }
 
+export type RuntimeSessionMode = 'stateless' | 'affinity' | 'strict';
+
+/** Explicit reasons a queue job may remain stateless in a stateful mode. */
+export type RuntimeSessionExemption = 'programmatic';
+
 export type JobData = {
   code: string;
   userId: string;
@@ -227,6 +251,26 @@ export type JobData = {
   executionId?: string;
   tenantId?: string;
   canonicalUserId?: string;
+  /** Producer deployment identity. Optional only for pre-profile queued jobs. */
+  executionProfile?: ExecutionProfile;
+  /**
+   * Server-derived runtime session identity. Absence is stateless unless
+   * strict mode requires it; explicit exemptions document intentional gaps.
+   */
+  runtimeSessionId?: string;
+  /**
+   * Producer-owned effective execution mode. This crosses the BullMQ boundary
+   * so API/worker rollout skew cannot reinterpret a stateful job as stateless
+   * (or reject an intentional stateless fallback). Optional only for queued
+   * jobs created before this field existed; workers infer those from the
+   * presence of runtimeSessionId.
+   */
+  runtimeSessionMode?: RuntimeSessionMode;
+  /**
+   * Intentional stateless exception. Programmatic/replay execution externalizes
+   * continuation state and does not yet bind PTC rounds to a warm session.
+   */
+  runtimeSessionExemption?: RuntimeSessionExemption;
   executionManifestClaims?: ExecutionManifestClaims;
   /** Raw grant claims retained only for service-worker dispatch so grant
    * expiry is anchored to sandbox start, not BullMQ enqueue time. */

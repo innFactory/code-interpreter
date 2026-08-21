@@ -22,6 +22,12 @@ internalServiceAuth:
 
 hardenedSandboxMode: true
 
+# Stable identity advertised by this API/worker deployment. Leave empty for a
+# backwards-compatible inferred profile. Set explicitly to `default` or
+# `stateful` when deploying both stacks against shared Redis; explicit
+# `stateful` selects isolated BullMQ queues.
+executionProfile: ""
+
 otel:
   enabled: false
   # OTLP/HTTP collector endpoint, e.g. "http://opentelemetry-collector.observability:4318".
@@ -120,6 +126,9 @@ workerSandbox:
     pullPolicy: IfNotPresent
 
   sandboxImage:
+    # With packages.source=image, build the api/Dockerfile default (or
+    # sandbox-runner-baked). With source=pvc/direct mode, build
+    # --target sandbox-runner under the same configured repository/tag.
     repository: codeapi-sandbox-runner
     tag: latest
     pullPolicy: IfNotPresent
@@ -197,6 +206,15 @@ workerSandbox:
     # Restart a sandbox-runner before launcher/VMM host-side fd retention can
     # exhaust the process file descriptor limit. Set 0 to disable.
     fdLivenessLimit: 40000
+    # Restart a sandbox-runner when its microVM guest wall clock differs from
+    # the host by this many seconds. This must remain comfortably below the
+    # 30-second execution-manifest clock tolerance; the chart reserves the
+    # five-second probe timeout and accepts at most 24. Set 0 to disable.
+    clockSkewLivenessLimitSeconds: 10
+    # Subtract a stable 0..N-second offset from each pod's clock-skew limit so
+    # replicas created together do not all recycle at once. Must be less than
+    # clockSkewLivenessLimitSeconds.
+    clockSkewLivenessJitterSeconds: 2
     inheritSharedScheduling: true
     nodeSelector: {}
     tolerations: []
@@ -241,9 +259,18 @@ workerSandbox:
     jobUidCount: null
     workspaceReaperMaxAgeSeconds: 3600
 
-  # Language runtime packages (mount from host or PVC)
+  # Language runtime package delivery
   packages:
-    # Use a PVC for packages
+    # image (default): boot a baked /pkgs tree from a read-only ext4 block root.
+    # This avoids long-lived virtio-fs inode handles exhausting the launcher FD
+    # limit. Requires kvmEnabled=true and sandboxImage built from the
+    # sandbox-runner-baked target (the api/Dockerfile default).
+    #
+    # pvc: legacy compatibility mode. Mount a host/PVC package tree through
+    # virtio-fs and recycle runners with the FD liveness guard before exhaustion.
+    source: image
+
+    # Used only when source=pvc.
     persistence:
       enabled: true
       size: 10Gi
@@ -252,7 +279,7 @@ workerSandbox:
       # If you have pre-built packages, specify the existing claim
       existingClaim: ""
 
-    # Init job to populate packages on first install
+    # Used only when source=pvc. Populates packages on first install.
     # Runs as a Helm pre-install/pre-upgrade hook
     # Compiles Python from source and downloads Node/Bun binaries
     initJob:
