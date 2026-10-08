@@ -1,0 +1,68 @@
+# Build & publish the codeapi-* container images to GHCR (public).
+# Consumed by companyGPT's modules/code-interpreter (image_registry = ghcr.io/innfactory).
+#
+# Trigger: push a tag `v*` (e.g. v0.1.0) or run manually with a tag input.
+# After the first run, set the GHCR packages to Public in the org package settings
+# so tenant clusters can pull without imagePullSecrets.
+name: Publish images
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Image tag to publish (e.g. v0.1.0)'
+        required: true
+        default: 'latest'
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: publish-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: codeapi-api, file: service/Dockerfile.api, target: production }
+          - { name: codeapi-worker, file: service/Dockerfile.worker, target: production }
+          - { name: codeapi-sandbox-runner, file: api/Dockerfile, target: sandbox-runner }
+          - { name: codeapi-file-server, file: service/Dockerfile, target: production }
+          - { name: codeapi-tool-call-server, file: service/Dockerfile.tool-call-server, target: production }
+          - { name: codeapi-egress-gateway, file: service/Dockerfile.egress-gateway, target: production }
+          - { name: codeapi-package-init, file: docker/Dockerfile.package-init, target: '' }
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve tag
+        id: tag
+        run: echo "value=${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref_name }}" >> "$GITHUB_OUTPUT"
+
+      - name: Build & push ${{ matrix.name }}
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.file }}
+          target: ${{ matrix.target }}
+          push: true
+          tags: |
+            ghcr.io/innfactory/${{ matrix.name }}:${{ steps.tag.outputs.value }}
+            ghcr.io/innfactory/${{ matrix.name }}:latest
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
