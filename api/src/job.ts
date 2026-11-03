@@ -283,6 +283,19 @@ const MIME_TYPE_BY_EXTENSION: ReadonlyMap<string, string> = new Map([
   ['.odt', 'application/vnd.oasis.opendocument.text'],
   ['.ods', 'application/vnd.oasis.opendocument.spreadsheet'],
   ['.odp', 'application/vnd.oasis.opendocument.presentation'],
+  ['.docm', 'application/vnd.ms-word.document.macroEnabled.12'],
+  ['.dotx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.template'],
+  ['.dotm', 'application/vnd.ms-word.template.macroEnabled.12'],
+  ['.xlsm', 'application/vnd.ms-excel.sheet.macroEnabled.12'],
+  ['.xlsb', 'application/vnd.ms-excel.sheet.binary.macroEnabled.12'],
+  ['.xltx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.template'],
+  ['.xltm', 'application/vnd.ms-excel.template.macroEnabled.12'],
+  ['.pptm', 'application/vnd.ms-powerpoint.presentation.macroEnabled.12'],
+  ['.potx', 'application/vnd.openxmlformats-officedocument.presentationml.template'],
+  ['.potm', 'application/vnd.ms-powerpoint.template.macroEnabled.12'],
+  ['.ppsx', 'application/vnd.openxmlformats-officedocument.presentationml.slideshow'],
+  ['.ppsm', 'application/vnd.ms-powerpoint.slideshow.macroEnabled.12'],
+  ['.odg', 'application/vnd.oasis.opendocument.graphics'],
   // Text / structured text
   ['.txt', 'text/plain'],
   ['.log', 'text/plain'],
@@ -543,6 +556,9 @@ const SUPPORTED_EXTENSIONS = new Set([
   '.conf', '.env', '.gitignore', '.ini', '.properties', '.toml',
   '.doc', '.docx', '.pdf', '.ppt', '.pptx', '.xls', '.xlsx',
   '.odt', '.ods', '.odp', '.rtf',
+  /* Office macro-enabled, binary and template formats (innFactory): */
+  '.docm', '.dotx', '.dotm', '.xlsm', '.xlsb', '.xltx', '.xltm',
+  '.pptm', '.potx', '.potm', '.ppsx', '.ppsm', '.odg',
   '.avif', '.bmp', '.gif', '.ico', '.jpeg', '.jpg', '.png',
   '.tif', '.tiff', '.webp',
   '.eot', '.ttf', '.woff', '.woff2',
@@ -554,7 +570,7 @@ const SUPPORTED_EXTENSIONS = new Set([
   '.bat', '.cmd', '.deb', '.log', '.rpm', '.vbs',
 ]);
 
-function isSupportedOutputFilename(name: string): boolean {
+export function isSupportedOutputFilename(name: string): boolean {
   const basename = path.basename(name);
   const ext = path.extname(basename).toLowerCase();
   const dottedBasename = `.${basename}`;
