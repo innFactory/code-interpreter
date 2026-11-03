@@ -985,6 +985,10 @@ test('bridge artifact policy and media types match the hardened gateway contract
   assert.equal(isSupportedBridgeArtifactName('reports/result.json'), true);
   assert.equal(isSupportedBridgeArtifactName('preview.png'), true);
   assert.equal(isSupportedBridgeArtifactName('model.bin'), false);
+  assert.equal(isSupportedBridgeArtifactName('calc.xlsm'), true);
+  assert.equal(isSupportedBridgeArtifactName('out/LETTER.DOCM'), true);
+  assert.equal(isSupportedBridgeArtifactName('master.potx'), true);
+  assert.equal(bridgeArtifactMediaType('calc.xlsm'), 'application/vnd.ms-excel.sheet.macroEnabled.12');
   assert.equal(bridgeArtifactMediaType('preview.png'), 'image/png');
   assert.equal(bridgeArtifactMediaType('reports/result.json'), 'application/json');
   assert.equal(bridgeArtifactMediaType('Dockerfile'), 'application/octet-stream');
