@@ -12,6 +12,7 @@ import {
   inputsLiveUnder,
   mapWithConcurrency,
   mimeTypeFor,
+  isSupportedOutputFilename,
 } from './job';
 import type { Runtime } from './runtime';
 import type { TFile } from './job';
@@ -82,6 +83,13 @@ describe('mimeTypeFor', () => {
   it('returns the registered MIME for archives', () => {
     expect(mimeTypeFor('bundle.zip')).toBe('application/zip');
     expect(mimeTypeFor('logs.tar.gz')).toBe('application/gzip');
+  });
+
+  it('returns the registered MIME for Office macro and template formats', () => {
+    expect(mimeTypeFor('calc.xlsm')).toBe('application/vnd.ms-excel.sheet.macroEnabled.12');
+    expect(mimeTypeFor('letter.docm')).toBe('application/vnd.ms-word.document.macroEnabled.12');
+    expect(mimeTypeFor('deck.pptm')).toBe('application/vnd.ms-powerpoint.presentation.macroEnabled.12');
+    expect(mimeTypeFor('master.potx')).toBe('application/vnd.openxmlformats-officedocument.presentationml.template');
   });
 
   it('falls back to application/octet-stream for unknown extensions', () => {
@@ -490,5 +498,21 @@ describe('ensureNodeModulesSymlink', () => {
     } finally {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }
+  });
+});
+
+describe('isSupportedOutputFilename', () => {
+  it('collects Office macro-enabled, binary and template outputs', () => {
+    for (const name of ['calc.xlsm', 'CALC.XLSM', 'big.xlsb', 'tpl.xltx', 'tpl.xltm', 'letter.docm',
+      'tpl.dotx', 'tpl.dotm', 'deck.pptm', 'master.potx', 'master.potm', 'show.ppsx', 'show.ppsm', 'draw.odg']) {
+      expect(isSupportedOutputFilename(name)).toBe(true);
+    }
+  });
+
+  it('still collects the existing formats and skips unknown ones', () => {
+    expect(isSupportedOutputFilename('report.xlsx')).toBe(true);
+    expect(isSupportedOutputFilename('notes.txt')).toBe(true);
+    expect(isSupportedOutputFilename('vbaProject.bin')).toBe(false);
+    expect(isSupportedOutputFilename('mystery.qwerty')).toBe(false);
   });
 });
